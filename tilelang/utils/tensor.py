@@ -9,6 +9,7 @@ from tvm.runtime import ndarray
 from tvm import tir
 from torch.utils.dlpack import to_dlpack
 import numpy as np
+from typing import Any
 
 
 class TensorSupplyType(Enum):
@@ -19,6 +20,11 @@ class TensorSupplyType(Enum):
     Zero = 5
     One = 6
     Auto = 7
+
+
+def get_dtype_info(dtype: torch.dtype, info: str) -> Any:
+    finfo = torch.finfo(dtype)
+    return getattr(finfo, info)
 
 
 def map_torch_type(intype: str) -> torch.dtype:
