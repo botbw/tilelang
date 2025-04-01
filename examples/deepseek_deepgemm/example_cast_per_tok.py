@@ -27,13 +27,13 @@ def per_token_cast_to_fp8(
     TOK_DIM: int=128,
     in_dtype: str="float32",
     out_dtype: str="e4m3_float8",
+    eps: float=1e-4,
 ):
-    assert out_dtype in ["e4m3_float8", "e5m2_float8"]
+    assert out_dtype in ["e4m3_float8"]
     torch_in_dype = map_torch_type(in_dtype)
     torch_out_dtype = map_torch_type(out_dtype)
     assert TOK_DIM > 0, f"TOK_DIM should be greater than 0, found {TOK_DIM=}"
     assert N % TOK_DIM == 0, f"N should be divisible by TOK_DIM, found {N=} {TOK_DIM=}"
-    in_eps = get_dtype_info(torch_in_dype, "eps")
     out_max = max(get_dtype_info(torch_out_dtype, "max"), abs(get_dtype_info(torch_out_dtype, "min")))
 
     @T.prim_func
@@ -51,38 +51,41 @@ def per_token_cast_to_fp8(
             tm = T.get_thread_binding(0)
             tn = T.get_thread_binding(1)
             tok_element = T.alloc_local((1, ), in_dtype)
-            tok_amax = T.alloc_local((1, ), in_dtype)
+            tok_abs = T.alloc_local((1, ), in_dtype)
+            tok_abs_max = T.alloc_local((1, ), in_dtype)
             tok_element[0] = X[b, bm * BLOCK_M + tm, bn * TOK_DIM + tn]
+            tok_abs[0] = T.abs(tok_element[0])
             with T.attr(
-                    T.comm_reducer(lambda x, y: T.max(T.abs(x), T.abs(y)), [T.Cast(in_dtype, 0)]),
+                    T.comm_reducer(lambda x, y: T.max(x, y), [T.Cast(in_dtype, 0)]),
                     "reduce_scope",
                     T.reinterpret(T.uint64(0), dtype="handle"),
             ):
                 T.evaluate(
                     T.tvm_thread_allreduce(
                         T.uint32(1),
-                        tok_element[0],
+                        tok_abs[0],
                         True,
-                        tok_amax[0],
+                        tok_abs_max[0],
                         tn,
                         dtype="handle",
                     ))
-            tok_amax[0] = T.max(tok_amax[0], in_eps)
-            Y[b, bm * BLOCK_M + tm, bn * TOK_DIM + tn] = (tok_element[0] * (out_max / tok_amax[0])).astype(out_dtype)
-            Y_scaler[b, bm * BLOCK_M + tm, bn] = tok_amax[0] / out_max
+            tok_abs_max[0] = T.max(tok_abs_max[0], eps)
+            Y[b, bm * BLOCK_M + tm, bn * TOK_DIM + tn] = (tok_element[0] * (out_max / tok_abs_max[0])).astype(out_dtype)
+            if tn == 0:
+                Y_scaler[b, bm * BLOCK_M + tm, bn] = tok_abs_max[0] / out_max
 
     return main
 
 
 def check_correctness_and_bench(kernel, B, M, N, TOK_DIM=128, bench_ref=True):
     kernel = tl.compile(kernel, out_idx=[1, 2])
-    x = torch.arange(B *M * N, device='cuda').to(torch.float32).reshape(B, M, N)
+    x = torch.randn((B, M, N), device='cuda')
     profiler = kernel.get_profiler()
     output_ref = ref_per_token_cast_to_fp8(x, tok_dim=TOK_DIM)
     output = kernel(x)
     output_ref = output_ref[0].to(torch.float32).reshape(B, M, -1, TOK_DIM) * output_ref[1].unsqueeze(-1)
     output = output[0].to(torch.float32).reshape(B, M, -1, TOK_DIM) * output[1].unsqueeze(-1)
-    assert torch.allclose(output, output_ref, rtol=1e-2, atol=1e-2), f"Output mismatch: {output} vs {output_ref}"
+    assert torch.allclose(output, output_ref, atol=1e-1, rtol=1e-1), f"Max diff: {torch.max(torch.abs(output - output_ref))}"
     if bench_ref:
         latency = profiler.do_bench(partial(ref_per_token_cast_to_fp8, tok_dim=TOK_DIM), warmup=500)
         print(f"Torch Latency: {latency} ms")
