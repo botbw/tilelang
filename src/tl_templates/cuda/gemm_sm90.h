@@ -35,6 +35,23 @@ public:
   static constexpr GMMA::Major GmmaMajorB =
       trans_B ? GMMA::Major::K : GMMA::Major::MN;
 
+  using MMAThrLayout = Layout<Shape<Int<num_warp_m / 4>, Int<num_warp_n>, _1>>;
+  using TileShape_MNK = Shape<Int<M / (num_warp_m / 4)>, Int<N / num_warp_n>, Int<K>>;
+
+  using MMA_Atom_SS = decltype(
+    GMMA::ss_op_selector<
+            A_type, B_type, C_type,
+            TileShape_MNK,
+            GmmaMajorA, GmmaMajorB>()
+  );
+
+  using MMA_Atom_RS = decltype(
+    GMMA::rs_op_selector<
+            A_type, B_type, C_type,
+            TileShape_MNK,
+            GmmaMajorA, GmmaMajorB>()
+  );
+
   using SmemLayoutAtomA =
       decltype(ss_smem_selector<GmmaMajorA, A_type, Int<M / (num_warp_m / 4)>,
                                 Int<K>>());
@@ -59,11 +76,9 @@ public:
     Tensor sB = make_tensor(make_smem_ptr(reinterpret_cast<B_type *>(pB)),
                             SmemLayoutB{});
     auto tiled_mma = make_tiled_mma(
-        GMMA::ss_op_selector<
-            A_type, B_type, C_type,
-            Shape<Int<M / (num_warp_m / 4)>, Int<N / num_warp_n>, Int<K>>,
-            GmmaMajorA, GmmaMajorB>(),
-        Layout<Shape<Int<num_warp_m / 4>, Int<num_warp_n>, _1>>{});
+        MMA_Atom_SS{},
+        MMAThrLayout{}
+    );
     auto thr_mma = tiled_mma.get_thread_slice(tid);
 
     // Allocate registers for pipelining
@@ -115,11 +130,9 @@ public:
     Tensor sB = make_tensor(make_smem_ptr(reinterpret_cast<B_type *>(pB)),
                             SmemLayoutB{});
     auto tiled_mma = make_tiled_mma(
-        GMMA::rs_op_selector<
-            A_type, B_type, C_type,
-            Shape<Int<M / (num_warp_m / 4)>, Int<N / num_warp_n>, Int<K>>,
-            GmmaMajorA, GmmaMajorB>(),
-        Layout<Shape<Int<num_warp_m / 4>, Int<num_warp_n>, _1>>{});
+        MMA_Atom_RS{},
+        MMAThrLayout{}
+    );
     auto thr_mma = tiled_mma.get_thread_slice(tid);
 
     // Allocate registers for pipelining
