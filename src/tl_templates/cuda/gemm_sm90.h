@@ -95,14 +95,6 @@ public:
       warpgroup_wait<wg_wait>();
     }
     warpgroup_fence_operand(acc);
-    // warpgroup_fence_operand(acc);
-    // warpgroup_arrive();
-
-    // gemm(tiled_mma, tCrA(_, _, _), tCrB(_, _, _), acc);
-
-    // warpgroup_commit_batch();
-    // if constexpr (wg_wait >= 0) { warpgroup_wait<wg_wait>(); }
-    // warpgroup_fence_operand(acc);
   }
 
   template <int wg_wait = 0>
