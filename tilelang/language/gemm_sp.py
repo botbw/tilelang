@@ -9,7 +9,7 @@ from typing import Union
 
 
 def gemm_sp(
-    A: Union[tir.Buffer, tir.Var],
+    A_sparse: Union[tir.Buffer, tir.Var],
     B: Union[tir.Buffer, tir.Var],
     C: Union[tir.Buffer, tir.Var],
     E: Union[tir.Buffer, tir.Var],
@@ -56,15 +56,15 @@ def gemm_sp(
             return T.get_let_value(arg).buffer
         return arg
 
-    A = legalize_arguments(A)
+    A_sparse = legalize_arguments(A_sparse)
     B = legalize_arguments(B)
     C = legalize_arguments(C)
     M = C.shape[0]
     N = C.shape[1]
-    K = A.shape[0] if transpose_A else A.shape[1]
+    K_A = A_sparse.shape[0] if transpose_A else A_sparse.shape[1]
     K_B = B.shape[1] if transpose_B else B.shape[0]
-    assert K == K_B, "gemm K shape check failed"
-    Aptr = A.access_ptr("r")
+    assert K_A * 2 == K_B, f"{K_A // 2} != {K_B}"
+    Aptr = A_sparse.access_ptr("r")
     Bptr = B.access_ptr("r")
     Cptr = C.access_ptr("rw")
     Eptr = E.access_ptr("r")
@@ -79,7 +79,7 @@ def gemm_sp(
         transpose_B,
         M,
         N,
-        K,
+        K_B,
         policy,
         clear_accum,
         wg_wait,
