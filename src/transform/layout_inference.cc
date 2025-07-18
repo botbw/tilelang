@@ -502,6 +502,29 @@ private:
   bool skip_thread_partition_{false};
 };
 
+tvm::transform::Pass ParallelLoopFuser() {
+  using namespace tir::transform;
+  auto pass_func = [=](PrimFunc f, IRModule m, PassContext ctx) {
+    f.CopyOnWrite()->body = ParallelLoopFuser::Fuse(f->body);
+    return f;
+  };
+  return CreatePrimFuncPass(pass_func, 0, "tl.ParallelLoopFuser", {});
+}
+TVM_REGISTER_GLOBAL("tl.transform.ParallelLoopFuser")
+    .set_body_typed(ParallelLoopFuser);
+
+tvm::transform::Pass ParallelLoopTransformer() {
+  using namespace tir::transform;
+  auto pass_func = [=](PrimFunc f, IRModule m, PassContext ctx) {
+    f.CopyOnWrite()->body = ParallelLoopTransformer::Substitute(f->body);
+    return f;
+  };
+  return CreatePrimFuncPass(pass_func, 0, "tl.ParallelLoopTransformer", {});
+}
+TVM_REGISTER_GLOBAL("tl.transform.ParallelLoopTransformer")
+    .set_body_typed(ParallelLoopTransformer);
+
+
 tvm::transform::Pass LayoutInference() {
   using namespace tir::transform;
   auto pass_func = [=](PrimFunc f, IRModule m, PassContext ctx) {
@@ -517,6 +540,5 @@ tvm::transform::Pass LayoutInference() {
 
 TVM_REGISTER_GLOBAL("tl.transform.LayoutInference")
     .set_body_typed(LayoutInference);
-
 } // namespace tl
 } // namespace tvm

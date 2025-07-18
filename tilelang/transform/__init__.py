@@ -48,6 +48,25 @@ def LayoutInference():
     return _ffi_api.LayoutInference()  # type: ignore
 
 
+def ParallelLoopTransformer():
+    """ParallelLoopTransformer
+    Returns
+    -------
+    fpass : tvm.transform.Pass
+        The result pass
+    """
+    return _ffi_api.ParallelLoopTransformer()  # type: ignore
+
+def ParallelLoopFuser():
+    """ParallelLoopFuser
+
+    Returns
+    -------
+    fpass : tvm.transform.Pass
+        The result pass
+    """
+    return _ffi_api.ParallelLoopFuser()  # type: ignore
+
 def LowerTileOp():
     """LowerTileOp
 
