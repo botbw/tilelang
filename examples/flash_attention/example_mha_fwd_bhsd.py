@@ -6,10 +6,32 @@ import tilelang.language as T
 import itertools
 import argparse
 from functools import partial
+import torch
+import torch.nn.functional as F
 
+tilelang.disable_cache()
+
+# python examples/flash_attention/example_mha_fwd_bhsd.py --batch 16 --is_causal --heads 32 --seq_q 4096 --seq_kv 4096 --dim 128 --tune
+# ...
+# Best latency: 16.757055282592773
+# Best TFlops: 131.22969510259628
+# Best config: {'block_M': 128, 'block_N': 128, 'num_stages': 3, 'threads': 256}
+
+# python examples/flash_attention/example_mha_fwd_bhsd.py --batch 8 --is_causal --heads 32 --seq_q 4096 --seq_kv 4096 --dim 128 --tune
+# ...
+# Best latency: 8.429984092712402
+# Best TFlops: 130.42867171321376
+# Best config: {'block_M': 128, 'block_N': 128, 'num_stages': 3, 'threads': 256}
+
+# python examples/flash_attention/example_mha_fwd_bhsd.py --batch 8 --is_causal --heads 32 --seq_q 4096 --seq_kv 4096 --dim 128
+# All checks pass.
+# Ref: 13.11 ms
+# Ref: 83.88 TFlops
+# Tile-lang: 8.43 ms
+# Tile-lang: 130.49 TFlops
 
 def get_configs():
-    iter_params = dict(block_M=[128], block_N=[128], num_stages=[2], threads=[256])
+    iter_params = dict(block_M=[32, 64, 128, 256], block_N=[32, 64, 128, 256], num_stages=[0, 1, 2, 3], threads=[128, 256])
     return [dict(zip(iter_params, values)) for values in itertools.product(*iter_params.values())]
 
 
@@ -149,18 +171,13 @@ def flashattn(batch,
     return main
 
 
-def ref_program(Q, K, V, is_causal):
-    dim = Q.size(-1)
-    scores = torch.einsum('bhqd,bhkd->bhqk', Q, K)
-    scores = scores / torch.sqrt(torch.tensor(dim, dtype=scores.dtype))
-    if is_causal:
-        seq_q = Q.size(2)
-        seq_kv = K.size(2)
-        mask = torch.tril(torch.ones(seq_q, seq_kv, device=scores.device))
-        mask = mask.unsqueeze(0).unsqueeze(0)
-        scores = scores.masked_fill(mask == 0, float('-inf'))
-    attention_weights = F.softmax(scores, dim=-1)
-    output = torch.einsum('bhqk,bhkd->bhqd', attention_weights, V)
+def ref_program(Q, K, V, is_causal: bool):
+    output = F.scaled_dot_product_attention(
+        Q, K, V,
+        attn_mask=None,
+        dropout_p=0.0,
+        is_causal=is_causal
+    )
     return output
 
 
@@ -186,10 +203,10 @@ def main(
             seq_kv,
             dim,
             is_causal,
-            block_M=64,
-            block_N=64,
-            num_stages=1,
-            threads=128)
+            block_M=128,
+            block_N=128,
+            num_stages=3,
+            threads=256)
         ref_program_processed = partial(ref_program, is_causal=is_causal)
 
         profiler = kernel.get_profiler()
