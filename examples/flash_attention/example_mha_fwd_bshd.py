@@ -6,10 +6,16 @@ import tilelang.language as T
 import itertools
 import argparse
 from functools import partial
+from flash_attn_interface import flash_attn_func
 
+# python examples/flash_attention/example_mha_fwd_bshd.py --batch 8 --is_causal --heads 32 --seq_len 4096 --dim 128 --tune
+# ...
+# Best latency: 8.432671546936035
+# Best TFlops: 130.38710468635549
+# Best config: {'block_M': 128, 'block_N': 128, 'num_stages': 3, 'threads': 256}
 
 def get_configs():
-    iter_params = dict(block_M=[64], block_N=[64], num_stages=[1], threads=[128])
+    iter_params = dict(block_M=[32, 64, 128, 256], block_N=[32, 64, 128, 256], num_stages=[0, 1, 2, 3], threads=[128, 256])
     return [dict(zip(iter_params, values)) for values in itertools.product(*iter_params.values())]
 
 
@@ -144,18 +150,16 @@ def flashattn(batch,
     return main
 
 
-def ref_program(Q, K, V, is_causal):
-    dim = Q.size(-1)
-    scores = torch.einsum('bqhd,bkhd->bhqk', Q, K)
-    scores = scores / torch.sqrt(torch.tensor(dim, dtype=scores.dtype))
-    if is_causal:
-        seq_len = Q.size(1)
-        mask = torch.tril(torch.ones(seq_len, seq_len, device=scores.device))
-        mask = mask.unsqueeze(0).unsqueeze(0)
-        scores = scores.masked_fill(mask == 0, float('-inf'))
-    attention_weights = F.softmax(scores, dim=-1)
-    output = torch.einsum('bhqk,bkhd->bqhd', attention_weights, V)
-    return output
+
+def ref_program(Q, K, V, is_causal: bool):
+    out = flash_attn_func(
+        Q, K, V,
+        dropout_p=0.0,
+        softmax_scale=None,
+        causal=is_causal
+    )
+
+    return out
 
 
 def main(
@@ -180,8 +184,8 @@ def main(
             is_causal,
             block_M=128,
             block_N=128,
-            num_stages=1,
-            threads=128)
+            num_stages=3,
+            threads=256)
         ref_program_processed = partial(ref_program, is_causal=is_causal)
         profiler = kernel.get_profiler()
         profiler.assert_allclose(ref_program_processed, rtol=0.01, atol=0.01)
@@ -193,7 +197,7 @@ def main(
         print("Tile-lang: {:.2f} ms".format(latency))
         print("Tile-lang: {:.2f} TFlops".format(total_flops / latency * 1e-9))
     else:
-        best_result = flashattn(batch, heads, seq_len, dim, is_causal, tune=tune)
+        best_result = flashattn(batch, heads, seq_len, dim, is_causal)
         best_latency = best_result.latency
         best_config = best_result.config
         ref_latency = best_result.ref_latency
