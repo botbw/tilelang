@@ -927,3 +927,9 @@ def ptx_mma_sm70(
         accumulator,
         c_index,
     )
+def ptx_movmatrix(src, src_offset, dst, dst_offset):
+    """TVM intrinsci for transpose a matrix in registers across the warp.
+    https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-movmatrix
+
+    """
+    return tir.call_intrin("handle", tir.op.Op.get("tl.ptx_movmatrix"), src, src_offset, dst, dst_offset)

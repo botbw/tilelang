@@ -297,6 +297,14 @@ TVM_DLL const Op &ptx_ldmatrix();
 TVM_DLL const Op &ptx_stmatrix();
 
 /*!
+ * \brief tvm intrinsics for stmatrix
+ *
+ * ptx_movmatrix(src, dst)
+ *
+ */
+TVM_DLL const Op &ptx_movmatrix();
+
+/*!
  * \brief tvm intrinsic for ptx async copy barrier using
  * cp.async.mbarrier.arrive.noinc
  *

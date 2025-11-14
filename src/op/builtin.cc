@@ -198,6 +198,11 @@ TIR_DEFINE_TL_BUILTIN(ptx_stmatrix)
     .set_attr<TCallEffectKind>("TCallEffectKind",
                                Integer(CallEffectKind::kOpaque));
 
+TIR_DEFINE_TL_BUILTIN(ptx_movmatrix)
+    .set_num_inputs(4)
+    .set_attr<TCallEffectKind>("TCallEffectKind",
+                               Integer(CallEffectKind::kOpaque));
+
 TIR_DEFINE_TL_BUILTIN(ptx_cp_async_barrier_noinc)
     .set_num_inputs(1)
     .set_attr<TCallEffectKind>("TCallEffectKind",

@@ -1620,6 +1620,15 @@ void CodeGenTileLangCUDA::VisitExpr_(const CallNode *op, std::ostream &os) {
     if (trans == 1)
       func_name += "_trans";
     print_extern_call_stmt(func_name, 2);
+  } else if (op->op.same_as(tl::ptx_movmatrix())) {
+    std::string src_ptr = this->PrintExpr(op->args[0]);
+    std::string src_offset = this->PrintExpr(op->args[1]);
+    std::string dst_ptr = this->PrintExpr(op->args[2]);
+    std::string dst_offset = this->PrintExpr(op->args[3]);
+    this->PrintIndent();
+    this->stream << "tl::ptx_movmatrix("
+                 << "reinterpret_cast<const int32_t *>(" << src_ptr << " + " << src_offset << "), "
+                 << "reinterpret_cast<int32_t*>(" << dst_ptr << " + " << dst_offset << "));\n";
   } else if (op->op.same_as(tl::fence_proxy_async())) {
     print_extern_call_stmt("tl::fence_proxy_async");
   } else if (op->op.same_as(tl::tma_store_arrive())) {
