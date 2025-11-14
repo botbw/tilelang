@@ -114,6 +114,13 @@ bool TargetHasStmatrix(Target target) {
   return arch >= 90;
 }
 
+bool TargetHasMovmatrix(Target target) {
+  if (!TargetIsCuda(target))
+    return false;
+  int arch = GetArchInt(target);
+  return arch >= 75;
+}
+
 bool TargetHasTmem(Target target) {
   if (!TargetIsCuda(target))
     return false;

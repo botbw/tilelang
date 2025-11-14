@@ -107,7 +107,7 @@ bool IsKnownGeneric(const CallNode *call) {
   if (call == nullptr) {
     return false;
   }
-  return call->op.same_as(ptx_ldmatrix()) || call->op.same_as(ptx_stmatrix()) ||
+  return call->op.same_as(ptx_ldmatrix()) || call->op.same_as(ptx_stmatrix()) || call->op.same_as(ptx_movmatrix()) ||
          call->op.same_as(initialize_wgmma_descriptor()) ||
          call->op.same_as(initialize_tcgen05_descriptor());
 }

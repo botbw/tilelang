@@ -26,6 +26,7 @@ bool TargetIsCDNA(Target target);
 bool TargetHasAsyncCopy(Target target);
 bool TargetHasLdmatrix(Target target);
 bool TargetHasStmatrix(Target target);
+bool TargetHasMovmatrix(Target target);
 bool TargetHasTmem(Target target);
 bool TargetHasBulkCopy(Target target);
 int TargetGetWarpSize(Target target);
