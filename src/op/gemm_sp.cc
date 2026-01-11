@@ -29,37 +29,37 @@ std::pair<int, int> GemmSPWarpPolicyNode::computeWarpPartition(int M, int N,
   auto [m_warp, n_warp] = GemmWarpPolicyNode::computeWarpPartition(
       M, N, block_size, target, use_wgmma ? GemmInst::kWGMMA : GemmInst::kMMA);
 
-  // Special handling for gemm_sp when the tiling size is not a multiple
-  // This should be consistent with shape check in gemm_sp_sm80.h
-  int m_atom_size = bits == 16 ? 32 : 16;
-  int n_atom_size = bits == 16 ? 32 : 16;
-  static const char *err_msg =
-      "Cannot arrange the warp shape to be a multiple of atom size, please "
-      "reduce num threads or increase tiling size";
-  if (TargetIsAmpere(target)) {
-    int warp_shape_m = M / m_warp;
-    int warp_shape_n = N / n_warp;
-    if (warp_shape_m % m_atom_size) { // GemmWarpPolicy::kFullRow
-      m_warp = M / m_atom_size;
-      ICHECK(m_warp > 0) << err_msg;
-      n_warp = num_warps / m_warp;
-      warp_shape_n = N / n_warp;
-      ICHECK(warp_shape_n % n_atom_size == 0) << err_msg;
-    } else if (warp_shape_n % n_atom_size != 0) { // GemmWarpPolicy::kFullColumn
-      n_warp = N / n_atom_size;
-      ICHECK(n_warp > 0) << err_msg;
-      m_warp = num_warps / n_warp;
-      warp_shape_m = M / m_warp;
-      ICHECK(warp_shape_m % m_atom_size == 0) << err_msg;
-    }
-    ICHECK(m_warp * n_warp == num_warps)
-        << "m_warp * n_warp must equal num_warps, please report an issue when "
-           "encounter this"
-        << ", m_warp: " << m_warp << ", n_warp: " << n_warp << ", num_warps"
-        << num_warps;
-    this->m_warp = m_warp;
-    this->n_warp = n_warp;
-  }
+  // // Special handling for gemm_sp when the tiling size is not a multiple
+  // // This should be consistent with shape check in gemm_sp_sm80.h
+  // int m_atom_size = bits == 16 ? 32 : 16;
+  // int n_atom_size = bits == 16 ? 32 : 16;
+  // static const char *err_msg =
+  //     "Cannot arrange the warp shape to be a multiple of atom size, please "
+  //     "reduce num threads or increase tiling size";
+  // if (TargetIsAmpere(target)) {
+  //   int warp_shape_m = M / m_warp;
+  //   int warp_shape_n = N / n_warp;
+  //   if (warp_shape_m % m_atom_size) { // GemmWarpPolicy::kFullRow
+  //     m_warp = M / m_atom_size;
+  //     ICHECK(m_warp > 0) << err_msg;
+  //     n_warp = num_warps / m_warp;
+  //     warp_shape_n = N / n_warp;
+  //     ICHECK(warp_shape_n % n_atom_size == 0) << err_msg;
+  //   } else if (warp_shape_n % n_atom_size != 0) { // GemmWarpPolicy::kFullColumn
+  //     n_warp = N / n_atom_size;
+  //     ICHECK(n_warp > 0) << err_msg;
+  //     m_warp = num_warps / n_warp;
+  //     warp_shape_m = M / m_warp;
+  //     ICHECK(warp_shape_m % m_atom_size == 0) << err_msg;
+  //   }
+  //   ICHECK(m_warp * n_warp == num_warps)
+  //       << "m_warp * n_warp must equal num_warps, please report an issue when "
+  //          "encounter this"
+  //       << ", m_warp: " << m_warp << ", n_warp: " << n_warp << ", num_warps"
+  //       << num_warps;
+  //   this->m_warp = m_warp;
+  //   this->n_warp = n_warp;
+  // }
   return {m_warp, n_warp};
 }
 
