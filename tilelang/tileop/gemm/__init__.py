@@ -163,7 +163,8 @@ class GemmPy(Node, Scriptable):
         Returns:
             GemmInst: The selected GEMM instruction type
         """
-        return GemmInst(_ffi_api.GemmPyGemmInst(self, int(thread_nums), target))
+        return GemmInst(GemmInst.MMA)
+        # return GemmInst(_ffi_api.GemmPyGemmInst(self, int(thread_nums), target))
 
     def _get_implementation_class(self, gemm_inst: GemmInst, target: Target):
         """Get the appropriate implementation class for the given GEMM instruction.
@@ -179,21 +180,23 @@ class GemmPy(Node, Scriptable):
             NotImplementedError: If the instruction type is not supported
             ValueError: If the instruction type is unknown
         """
+        assert gemm_inst.is_mma(), f"The modified branch only supports mma now, got {gemm_inst}"
+        return GemmMMA
         # CuTeDSL backend uses direct intrinsic call, bypass complex lowering
-        if is_cutedsl_target(target):
-            return GemmCuTeDSL
+        # if is_cutedsl_target(target):
+        #     return GemmCuTeDSL
 
-        if gemm_inst.is_mma():
-            if target_is_volta(target):
-                return GemmMMASm70
-            return GemmMMA
-        elif gemm_inst.is_wgmma():
-            return GemmWGMMA
-        elif gemm_inst.is_tcgen5mma():
-            return GemmTCGEN5
-        elif gemm_inst.is_mfma():
-            return GemmMFMA
-        elif gemm_inst.is_tcgen5mma():
-            raise NotImplementedError("TCGEN5MMA is not implemented")
-        else:
-            raise ValueError(f"Unsupported GEMM instruction: {gemm_inst}")
+        # if gemm_inst.is_mma():
+        #     if target_is_volta(target):
+        #         return GemmMMASm70
+        #     return GemmMMA
+        # elif gemm_inst.is_wgmma():
+        #     return GemmWGMMA
+        # elif gemm_inst.is_tcgen5mma():
+        #     return GemmTCGEN5
+        # elif gemm_inst.is_mfma():
+        #     return GemmMFMA
+        # elif gemm_inst.is_tcgen5mma():
+        #     raise NotImplementedError("TCGEN5MMA is not implemented")
+        # else:
+        #     raise ValueError(f"Unsupported GEMM instruction: {gemm_inst}")

@@ -222,15 +222,16 @@ class SparseTensorCoreIntrinEmitter:
 
         self.warp_rows = warp_row_tiles // m_dim
 
-        if warp_col_tiles % 16 == 0:
-            self.n_dim = 16
-            self.micro_size_y = 16
-            self.warp_cols = warp_col_tiles // 16
-        else:
-            # must be divisible by 8
-            self.n_dim = 8
-            self.micro_size_y = 8
-            self.warp_cols = warp_col_tiles // 8
+        # if warp_col_tiles % 16 == 0:
+        #     self.n_dim = 16
+        #     self.micro_size_y = 16
+        #     self.warp_cols = warp_col_tiles // 16
+        # else:
+        # NOTE: need to be consistent with dense version
+        # must be divisible by 8
+        self.n_dim = 8
+        self.micro_size_y = 8
+        self.warp_cols = warp_col_tiles // 8
 
         self.micro_size_x = m_dim
         # NOTE: k_dim here represents the logical shape of the MMA operation.

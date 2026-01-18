@@ -28,10 +28,10 @@ def make_mma_load_base_layout(dtype: T.dtype = T.float16, matrix: Literal["A", "
     """
     from tilelang.intrinsics.mma_layout import (
         shared_16x8_to_mma_32x4_layout_sr_a,
-        shared_16x16_to_mma_32x8_layout_sr_a,
+        shared_16x32_to_mma_32x16_layout_sr_a_16bit,
         shared_16x32_to_mma_32x16_layout_sr_a,
         shared_16x8_to_mma_32x4_layout_sr_b,
-        shared_16x16_to_mma_32x8_layout_sr_b,
+        shared_16x32_to_mma_32x16_layout_sr_b_16bit,
         shared_16x32_to_mma_32x16_layout_sr_b,
     )
 
@@ -47,8 +47,8 @@ def make_mma_load_base_layout(dtype: T.dtype = T.float16, matrix: Literal["A", "
         transform_func_sr_a = shared_16x8_to_mma_32x4_layout_sr_a
         transform_func_sr_b = shared_16x8_to_mma_32x4_layout_sr_b
     elif dtype_bits == 16:
-        transform_func_sr_a = shared_16x16_to_mma_32x8_layout_sr_a
-        transform_func_sr_b = shared_16x16_to_mma_32x8_layout_sr_b
+        transform_func_sr_a = shared_16x32_to_mma_32x16_layout_sr_a_16bit
+        transform_func_sr_b = shared_16x32_to_mma_32x16_layout_sr_b_16bit
     elif dtype_bits == 8:
         transform_func_sr_a = shared_16x32_to_mma_32x16_layout_sr_a
         transform_func_sr_b = shared_16x32_to_mma_32x16_layout_sr_b

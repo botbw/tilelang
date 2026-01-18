@@ -15,14 +15,14 @@ def ldmatrix_32x4_to_shared_16x8_layout_b(thread_id, local_id):
     return row, col
 
 
-def ldmatrix_32x8_to_shared_16x16_layout(thread_id, local_id):
+def ldmatrix_32x16_to_shared_16x32_layout(thread_id, local_id):
     row = thread_id % 16
-    col = 8 * (thread_id // 16) + local_id % 8
+    col = 8 * (thread_id // 16) + (local_id // 8) * 16 + local_id % 8
     return row, col
 
 
-def ldmatrix_trans_32x8_to_shared_16x16_layout(thread_id, local_id):
-    row = 8 * (thread_id // 16) + (thread_id % 8)
+def ldmatrix_trans_32x16_to_shared_32x16_layout(thread_id, local_id):
+    row = 8 * (thread_id // 16) + (thread_id % 8) + 16 * (local_id // 8)
     col = 8 * ((thread_id % 16) // 8) + local_id % 8
     return row, col
 
@@ -79,26 +79,26 @@ shared_16x8_to_mma_32x4_layout_rs_a = shared_16x8_to_mma_a_32x4_layout_trans
 shared_16x8_to_mma_32x4_layout_rs_b = shared_16x8_to_mma_b_32x4_layout_trans
 
 
-def shared_16x16_to_mma_a_32x8_layout(i, j):
+def shared_16x32_to_mma_a_32x16_layout_16bit(i, j):
     thread_id = 4 * (i % 8) + (j % 8) // 2
     return thread_id, 4 * (j // 8) + (i // 8) * 2 + (j % 2)
 
 
 def shared_16x16_to_mma_a_32x8_layout_trans(i, j):
-    return shared_16x16_to_mma_a_32x8_layout(j, i)
+    return shared_16x32_to_mma_a_32x16_layout_16bit(j, i)
 
 
-def shared_16x16_to_mma_b_32x8_layout(i, j):
+def shared_16x32_to_mma_b_32x16_layout_16bit(i, j):
     thread_id = 4 * (i % 8) + (j % 8) // 2
-    return thread_id, 4 * (i // 8) + (j // 8) * 2 + (j % 2)
+    return thread_id, (i // 8) * 8 + (j // 16) * 4 + (j % 16 // 8) * 2 + (j % 2)
 
 
 def shared_16x16_to_mma_b_32x8_layout_trans(i, j):
-    return shared_16x16_to_mma_b_32x8_layout(j, i)
+    return shared_16x32_to_mma_b_32x16_layout_16bit(j, i)
 
 
-shared_16x16_to_mma_32x8_layout_sr_a = shared_16x16_to_mma_a_32x8_layout
-shared_16x16_to_mma_32x8_layout_sr_b = shared_16x16_to_mma_b_32x8_layout
+shared_16x32_to_mma_32x16_layout_sr_a_16bit = shared_16x32_to_mma_a_32x16_layout_16bit
+shared_16x32_to_mma_32x16_layout_sr_b_16bit = shared_16x32_to_mma_b_32x16_layout_16bit
 shared_16x16_to_mma_32x8_layout_rs_a = shared_16x16_to_mma_a_32x8_layout_trans
 shared_16x16_to_mma_32x8_layout_rs_b = shared_16x16_to_mma_b_32x8_layout_trans
 
@@ -173,7 +173,7 @@ def mma_load_b_32x16_to_shared_16x32_layout(thread_id, local_id):
     return row, col
 
 
-def mma_load_b_32x8_to_shared_16x16_layout(thread_id, local_id):
+def mma_load_b_32x16_to_shared_32x16_layout(thread_id, local_id):
     """
     groupID           = %laneid >> 2
     threadID_in_group = %laneid % 4
@@ -183,9 +183,11 @@ def mma_load_b_32x8_to_shared_16x16_layout(thread_id, local_id):
 
     col = groupID
     """
-    col = (thread_id % 4) * 2 + ((local_id % 4) % 2) + ((local_id % 4) // 2) * 8
-    row = (thread_id // 4) + 8 * (local_id // 4)
-    return row, col
+
+    k = (thread_id % 4) * 2 + (local_id // 2) % 4 * 8 + local_id % 2
+    j = (thread_id // 4) + (local_id // 2 // 4) * 8
+    return j, k
+
 
 
 def shared_16x16_to_mma_32x8_smoothlayout(i, j):

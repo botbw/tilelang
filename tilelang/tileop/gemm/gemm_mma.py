@@ -96,6 +96,8 @@ class GemmMMA(GemmBase):
 
         assert is_full_region(C_region), "Fragment output C must be a full region"
 
+        print(f"{warp_rows=} {warp_cols=} {local_size_a=} {local_size_b=} {micro_size_k=} {block_K=} {warp_cols=}")
+
         if self.is_gemm_ss():
 
             @T.prim_func
@@ -123,6 +125,9 @@ class GemmMMA(GemmBase):
                         B_region,
                         ki,
                     )
+
+                    # T.print_op.print_local_buffer_with_condition(True, A_local, warp_rows * local_size_a)
+                    # T.print_op.print_local_buffer_with_condition(True, B_local, warp_cols * local_size_b)
 
                     # Perform Matrix Multiplication
                     mma_emitter.mma(A_local, B_local, C_buf, ki)

@@ -3,8 +3,8 @@ from typing import Literal
 from .mma_layout import (
     ldmatrix_32x4_to_shared_16x8_layout_a,
     ldmatrix_32x4_to_shared_16x8_layout_b,
-    ldmatrix_32x8_to_shared_16x16_layout,
-    ldmatrix_trans_32x8_to_shared_16x16_layout,
+    ldmatrix_32x16_to_shared_16x32_layout,
+    ldmatrix_trans_32x16_to_shared_32x16_layout,
     ldmatrix_32x16_to_shared_16x32_layout_a,
     ldmatrix_32x16_to_shared_16x32_layout_b,
     mma_store_32x8_to_shared_16x16_layout,
@@ -41,8 +41,8 @@ def get_ldmatrix_offset(
         else:
             raise ValueError("ldmatrix only supports B transposed and A non-transposed for int8")
     elif dtype_bits == 16:
-        transform_func = ldmatrix_32x8_to_shared_16x16_layout
-        transform_func_trans = ldmatrix_trans_32x8_to_shared_16x16_layout
+        transform_func = ldmatrix_32x16_to_shared_16x32_layout
+        transform_func_trans = ldmatrix_trans_32x16_to_shared_32x16_layout
         if transposed:
             new_row_idx, new_col_idx = transform_func_trans(row_idx, col_idx)
             return new_row_idx * stride + new_col_idx

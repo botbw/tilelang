@@ -6,7 +6,7 @@ from tilelang.intrinsics.mma_layout import (
     mma_load_a_32x16_to_shared_16x32_layout,
     mma_load_a_32x8_to_shared_16x16_layout,
     shared_16x8_to_mma_32x4_layout_sr_a,
-    shared_16x16_to_mma_32x8_layout_sr_a,
+    shared_16x32_to_mma_32x16_layout_sr_a_16bit,
     shared_16x32_to_mma_32x16_layout_sr_a,
 )
 
@@ -21,7 +21,7 @@ def shared_16x16_to_mma_sp_layout_sr_b(i, j):
 
 
 def shared_16x32_to_mma_sp_layout_sr_a(i, j):
-    return shared_16x16_to_mma_32x8_layout_sr_a(i, j)
+    return shared_16x32_to_mma_32x16_layout_sr_a_16bit(i, j)
 
 
 def shared_16x32_to_mma_sp_layout_sr_b(i, j):
