@@ -437,7 +437,8 @@ public:
     // First compute liveness over the flattened schedule, then feed it into the
     // arena packer.
     this->LivenessAnalysis(finder.linear_seq_, finder.stmt_attrs_);
-    this->PlanMemory(finder.linear_seq_, finder.stmt_attrs_);
+    this->PlanMemory(finder.linear_seq_, finder.stmt_attrs_,
+                     enable_aggressive_merge);
   }
 
 private:
@@ -1070,7 +1071,8 @@ private:
    */
   void
   PlanMemory(const std::vector<StmtEntry> &seq,
-             const std::unordered_map<const Object *, StmtAttr> &stmt_attrs) {
+             const std::unordered_map<const Object *, StmtAttr> &stmt_attrs,
+             bool enable_aggressive_merge = false) {
     buffer_byte_offsets_.clear();
     (void)stmt_attrs;
 
@@ -1174,9 +1176,46 @@ private:
                 return a.name < b.name;
               });
 
+    const BufInfo *k_dense_info = nullptr;
+    const BufInfo *k_sp_info = nullptr;
+    const BufInfo *k_e_info = nullptr;
+    const BufInfo *v_dense_info = nullptr;
+    const BufInfo *v_sp_info = nullptr;
+    const BufInfo *v_e_info = nullptr;
+
+    if (enable_aggressive_merge) {
+      for (const auto &info : buf_infos) {
+        if (info.name == "K_dense_shared")
+          k_dense_info = &info;
+        else if (info.name == "K_SP_shared")
+          k_sp_info = &info;
+        else if (info.name == "K_E_shared")
+          k_e_info = &info;
+        else if (info.name == "V_dense_shared")
+          v_dense_info = &info;
+        else if (info.name == "V_SP_shared")
+          v_sp_info = &info;
+        else if (info.name == "V_E_shared")
+          v_e_info = &info;
+      }
+      ICHECK(k_dense_info) << "K_dense_shared not found, aggressive merge are specialized for blockattn kernels";
+      ICHECK(k_sp_info) << "K_SP_shared not found, aggressive merge are specialized for blockattn kernels";
+      ICHECK(k_e_info) << "K_E_shared not found";
+      ICHECK(v_dense_info) << "V_dense_shared not found, aggressive merge are specialized for blockattn kernels";
+      ICHECK(v_sp_info) << "V_SP_shared not found, aggressive merge are specialized for blockattn kernels";
+      ICHECK(v_e_info) << "V_E_shared not found, aggressive merge are specialized for blockattn kernels";
+    }
+
     std::vector<Interval> intervals;
     intervals.reserve(buf_infos.size());
     for (const BufInfo &info : buf_infos) {
+      if (enable_aggressive_merge) {
+        if (info.name == "K_dense_shared" || info.name == "K_SP_shared" ||
+            info.name == "K_E_shared" || info.name == "V_dense_shared" ||
+            info.name == "V_SP_shared" || info.name == "V_E_shared") {
+          continue;
+        }
+      }
       if (!info.const_size_bytes.has_value())
         continue;
       // Only constant-sized buffers participate in the arena packing because
@@ -1218,18 +1257,120 @@ private:
       return cast(offset_dtype, expr);
     };
 
+    if (k_dense_info && k_sp_info && k_e_info) {
+      if (k_dense_info->const_size_bytes.has_value() &&
+          k_sp_info->const_size_bytes.has_value() &&
+          k_e_info->const_size_bytes.has_value()) {
+        int64_t k_dense_size = k_dense_info->const_size_bytes.value();
+        int64_t k_sp_size = k_sp_info->const_size_bytes.value();
+        int64_t k_e_size = k_e_info->const_size_bytes.value();
+        int64_t k_sp_size_aligned = k_sp_size;
+        if (k_e_info->alignment > 1) {
+             int64_t remainder = k_sp_size % k_e_info->alignment;
+             if (remainder != 0) {
+                 k_sp_size_aligned += (k_e_info->alignment - remainder);
+             }
+        }
+
+        ICHECK_GE(k_dense_size, k_sp_size_aligned + k_e_size)
+            << " sizeof(K_dense_shared) must be >= sizeof(K_SP_shared) + "
+               "sizeof(K_E_shared)";
+      }
+    }
+
+    if (v_dense_info && v_sp_info && v_e_info) {
+      if (v_dense_info->const_size_bytes.has_value() &&
+          v_sp_info->const_size_bytes.has_value() &&
+          v_e_info->const_size_bytes.has_value()) {
+        int64_t v_dense_size = v_dense_info->const_size_bytes.value();
+        int64_t v_sp_size = v_sp_info->const_size_bytes.value();
+        int64_t v_e_size = v_e_info->const_size_bytes.value();
+        int64_t v_sp_size_aligned = v_sp_size;
+        if (v_e_info->alignment > 1) {
+             int64_t remainder = v_sp_size % v_e_info->alignment;
+             if (remainder != 0) {
+                 v_sp_size_aligned += (v_e_info->alignment - remainder);
+             }
+        }
+        ICHECK_GE(v_dense_size, v_sp_size_aligned + v_e_size)
+            << " sizeof(V_dense_shared) must be >= sizeof(V_SP_shared) + "
+               "sizeof(V_E_shared)";
+      }
+    }
+
+    PrimExpr k_group_start;
+    PrimExpr k_group_end;
+    bool k_group_allocated = false;
+
+    PrimExpr v_group_start;
+    PrimExpr v_group_end;
+    bool v_group_allocated = false;
+
     for (const BufInfo &info : buf_infos) {
       PrimExpr offset_expr;
-      auto it = plan.offsets.find(info.var);
-      if (it != plan.offsets.end()) {
-        offset_expr =
-            make_const(offset_dtype, static_cast<int64_t>(it->second));
-      } else {
-        // Dynamic-sized buffers are appended after the constant arena.
-        cursor = AlignPrimExpr(cursor, info.alignment);
+
+      bool is_k_group = (k_dense_info && k_sp_info && k_e_info) &&
+                        (info.name == "K_dense_shared" ||
+                         info.name == "K_SP_shared" || info.name == "K_E_shared");
+      bool is_v_group = (v_dense_info && v_sp_info && v_e_info) &&
+                        (info.name == "V_dense_shared" ||
+                         info.name == "V_SP_shared" || info.name == "V_E_shared");
+
+      if (is_k_group) {
+        if (!k_group_allocated) {
+          int max_align = std::max(k_dense_info->alignment, k_sp_info->alignment);
+          k_group_start = AlignPrimExpr(cursor, max_align);
+          k_group_end = k_group_start;
+          k_group_allocated = true;
+        }
+
+        if (info.name == "K_dense_shared" || info.name == "K_SP_shared") {
+          offset_expr = k_group_start;
+        } else {
+          PrimExpr sp_size = CastToOffset(k_sp_info->size_expr);
+          offset_expr = k_group_start + sp_size;
+          offset_expr = AlignPrimExpr(offset_expr, k_e_info->alignment);
+        }
+
         PrimExpr size_expr = CastToOffset(info.size_expr);
-        offset_expr = cursor;
-        cursor = offset_expr + size_expr;
+        PrimExpr current_end = offset_expr + size_expr;
+        k_group_end = max(k_group_end, current_end);
+        
+        cursor = max(cursor, k_group_end);
+
+      } else if (is_v_group) {
+        if (!v_group_allocated) {
+          int max_align = std::max(v_dense_info->alignment, v_sp_info->alignment);
+          v_group_start = AlignPrimExpr(cursor, max_align);
+          v_group_end = v_group_start;
+          v_group_allocated = true;
+        }
+
+        if (info.name == "V_dense_shared" || info.name == "V_SP_shared") {
+          offset_expr = v_group_start;
+        } else {
+          PrimExpr sp_size = CastToOffset(v_sp_info->size_expr);
+          offset_expr = v_group_start + sp_size;
+          offset_expr = AlignPrimExpr(offset_expr, v_e_info->alignment);
+        }
+
+        PrimExpr size_expr = CastToOffset(info.size_expr);
+        PrimExpr current_end = offset_expr + size_expr;
+        v_group_end = max(v_group_end, current_end);
+        cursor = max(cursor, v_group_end);
+
+      } else {
+        auto it = plan.offsets.find(info.var);
+        if (it != plan.offsets.end()) {
+          offset_expr =
+              make_const(offset_dtype, static_cast<int64_t>(it->second));
+        } else {
+        // Dynamic-sized buffers are appended after the constant arena.
+          cursor = AlignPrimExpr(cursor, info.alignment);
+          PrimExpr size_expr = CastToOffset(info.size_expr);
+          offset_expr = cursor;
+          cursor = offset_expr + size_expr;
+        }
       }
 
       buffer_byte_offsets_[info.var] = offset_expr;
@@ -1271,7 +1412,19 @@ private:
             continue;
           int64_t b_off = b_off_imm->value;
           int64_t b_end = b_off + b.const_size_bytes.value();
-          bool mem_overlap = !(a_end <= b_off || b_end <= a_off);
+          bool mem_overlap = !(a_end <= b_off || b_end <= a_off) && ( // not k and v group
+              !((k_dense_info && k_sp_info && k_e_info) &&
+                ( (a.name == "K_dense_shared" || a.name == "K_SP_shared" || a.name == "K_E_shared") &&
+                  (b.name == "K_dense_shared" || b.name == "K_SP_shared" || b.name == "K_E_shared")
+                )
+              ) &&
+              !((v_dense_info && v_sp_info && v_e_info) &&
+                ( (a.name == "V_dense_shared" || a.name == "V_SP_shared" || a.name == "V_E_shared") &&
+                  (b.name == "V_dense_shared" || b.name == "V_SP_shared" || b.name == "V_E_shared")
+                )
+              )
+
+          );
           if (mem_overlap) {
             overlap_detected = true;
             LOG(WARNING) << "Buffer overlap detected between " << a.name
@@ -1336,6 +1489,9 @@ Stmt MergeSharedMemoryAllocations(Stmt stmt, bool merge_static_smem,
                                   int align_bytes = 16, bool verbose = false) {
   AllocateCollector collector;
   collector(stmt);
+  // std::cout << "merge_static_smem: " << merge_static_smem << std::endl;
+  // std::cout << "dynamic alloc: " << collector.dyn_shmem_allocs_.size() << std::endl;
+  // std::cout << "static alloc: " << collector.static_shmem_allocs_.size() << std::endl;
   if (collector.dyn_shmem_allocs_.size() > 1) {
     SharedMemoryRewriter rewriter(collector.dyn_shmem_allocs_, true, verbose,
                                   align_bytes);

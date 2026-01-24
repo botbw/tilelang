@@ -263,7 +263,9 @@ def OptimizeForTarget(mod: IRModule, target: Target) -> IRModule:
     # MergeSharedMemoryAllocations must be applied after SplitHostDevice
     # because the merged allocation site is at the beginning of each device function
     enable_aggressive_merge = should_enable_aggressive_merge(pass_ctx=pass_ctx, target=target)
+    # print(f"Before merge: {mod}")
     mod = tilelang.transform.MergeSharedMemoryAllocations(enable_aggressive_merge=enable_aggressive_merge)(mod)
+    # print(f"After merge: {mod}")
     mod = tilelang.transform.ThreadSync("shared")(mod)
     mod = tilelang.transform.ThreadSync("shared.dyn")(mod)
     # Inject PTX async copy must behind the thread sync pass
