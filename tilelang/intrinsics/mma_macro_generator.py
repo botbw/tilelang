@@ -112,7 +112,6 @@ class TensorCoreIntrinEmitter:
     def _initialize_k_dim(self, a_dtype=T.float16):
         if isinstance(a_dtype, str):
             a_dtype = DataType(a_dtype)
-        assert a_dtype == T.float16, f"The modified branch only supports T.float16, found {a_dtype=}"
         # self.k_dim = 256 // a_dtype.bits
         self.k_dim = 32
 
