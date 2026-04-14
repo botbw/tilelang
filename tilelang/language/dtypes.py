@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         def as_torch(self) -> torch.dtype: ...
 else:
     dtype = tvm.DataType
+    tvm.target.datatype.register("tfloat32", 129)  # NOTE: type code need to be manually managed
 
 # Python 3.9 compatibility: avoid PEP 604 unions at runtime
 AnyDType = Union[ir.Type, str, type, torch.dtype, dtype]
@@ -417,7 +418,7 @@ if TYPE_CHECKING:
     class float4_e2m1fnx64(dtype): ...
     class bfloat16(dtype): ...
     class bfloat16x2(dtype): ...
-
+    class tfloat32(dtype): ...
     # yapf: enable
 
 else:
@@ -586,6 +587,7 @@ else:
     float4_e2m1fnx64 = dtype("float4_e2m1fnx64")
     bfloat16 = dtype("bfloat16")
     bfloat16x2 = dtype("bfloat16x2")
+    tfloat32 = dtype("custom[tfloat32]")
 
 _all_dtypes = [
     "bool",
@@ -753,6 +755,7 @@ _all_dtypes = [
     "float4_e2m1fnx64",
     "bfloat16",
     "bfloat16x2",
+    "tfloat32",
 ]
 
 __all__ = list(_all_dtypes) + [

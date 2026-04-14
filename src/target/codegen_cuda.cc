@@ -603,6 +603,22 @@ void CodeGenTileLangCUDA::BindThreadIndex(const IterVar &iv) {
 
 void CodeGenTileLangCUDA::PrintType(DataType t, std::ostream &os) { // NOLINT(*)
   int lanes = t.lanes();
+  static const auto f_datatype_get_type_registered =
+      tvm::ffi::Function::GetGlobalRequired(
+          "runtime._datatype_get_type_registered");
+  if (f_datatype_get_type_registered(static_cast<int>(t.code())).cast<bool>()) {
+    static const auto fget_custom_type_name =
+        tvm::ffi::Function::GetGlobalRequired("dtype.get_custom_type_name");
+    auto dtype =
+        fget_custom_type_name(static_cast<int>(t.code())).cast<std::string>();
+    if (dtype == "tfloat32") {
+      // Lower tfloat32 to float32
+      this->PrintType(DataType::Float(32, lanes), os);
+      return;
+    }
+    LOG(FATAL) << "Unsupported custom type " << dtype
+               << " in CUDA codegen but got " << t;
+  }
   if (t.is_handle()) {
     ICHECK(t.is_scalar()) << "do not yet support vector types";
     os << "void*";
@@ -2374,13 +2390,11 @@ void CodeGenTileLangCUDA::VisitExpr_(const CallNode *op, std::ostream &os) {
     // TODO(lei): Type Workaround for TF32, should be removed when
     // we introduced tfloat32_t in the frontend.
     std::string AType = tl::codegen::ptx::DTypeEnumToString(dtype_a_enum);
-    if (AType == "tl::DataType::kFloat32") {
-      AType = "tl::DataType::kTensorFloat32";
-    }
+    ICHECK(AType != "tl::DataType::kFloat32")
+        << "Explicitly convert float32 to tfloat32 to utilize tensor cores";
     std::string BType = tl::codegen::ptx::DTypeEnumToString(dtype_b_enum);
-    if (BType == "tl::DataType::kFloat32") {
-      BType = "tl::DataType::kTensorFloat32";
-    }
+    ICHECK(BType != "tl::DataType::kFloat32")
+        << "Explicitly convert float32 to tfloat32 to utilize tensor cores";
     std::string ARegType = tl::codegen::GetMMARegisterType(dtype_a_enum);
     if (ARegType == "float") {
       ARegType = "uint32_t";
@@ -2556,13 +2570,11 @@ void CodeGenTileLangCUDA::VisitExpr_(const CallNode *op, std::ostream &os) {
     tl::codegen::Replacer replacer;
 
     std::string AType = tl::codegen::ptx::DTypeEnumToString(A_dtype);
-    if (AType == "tl::DataType::kFloat32") {
-      AType = "tl::DataType::kTensorFloat32";
-    }
+    ICHECK(AType != "tl::DataType::kFloat32")
+        << "Explicitly convert float32 to tfloat32 to utilize tensor cores";
     std::string BType = tl::codegen::ptx::DTypeEnumToString(B_dtype);
-    if (BType == "tl::DataType::kFloat32") {
-      BType = "tl::DataType::kTensorFloat32";
-    }
+    ICHECK(BType != "tl::DataType::kFloat32")
+        << "Explicitly convert float32 to tfloat32 to utilize tensor cores";
 
     replacer.register_rule("(AType)", AType);
     replacer.register_rule("(BType)", BType);
