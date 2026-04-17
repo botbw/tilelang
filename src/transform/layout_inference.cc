@@ -48,6 +48,63 @@ int64_t GetElementStorageBits(DataType dtype) {
   return static_cast<int64_t>(dtype.bits()) * dtype.lanes();
 }
 
+enum class EventType : uint8_t {
+  // new layout
+  kAccept = 0,
+  // layout has been inferred before, and the new inference is consistent with
+  // the previous one
+  kSame = 1,
+  kContain = 2,
+  kMerge = 3,
+  // conflicting layout inference, cannot accept the new layout
+  kReject = 4,
+};
+
+String GetOpLabel(const ObjectRef &stmt) {
+  if (const auto *call_node = stmt.as<CallNode>()) {
+    if (const auto *op_node = call_node->op.as<OpNode>()) {
+      return op_node->name;
+    }
+    return String("UnknownCall");
+  } else if (const auto *for_node = stmt.as<ForNode>()) {
+    if (for_node->kind == ForKind::kParallel) {
+      return String("parallel_for");
+    }
+    return String("serial_for");
+  }
+  return String(stmt->GetTypeKey());
+}
+
+String InferLevelToName(InferLevel level) {
+  switch (level) {
+  case InferLevel::kStrict:
+    return String("strict");
+  case InferLevel::kCommon:
+    return String("common");
+  case InferLevel::kFree:
+    return String("free");
+  }
+  LOG(FATAL) << "Unknown InferLevel: " << static_cast<int>(level);
+  return String("unknown");
+}
+
+String EventTypeToName(EventType event_type) {
+  switch (event_type) {
+  case EventType::kAccept:
+    return String("accept");
+  case EventType::kSame:
+    return String("same");
+  case EventType::kContain:
+    return String("contain");
+  case EventType::kMerge:
+    return String("merge");
+  case EventType::kReject:
+    return String("reject");
+  }
+  LOG(FATAL) << "Unknown EventType: " << static_cast<int>(event_type);
+  return String("unknown");
+}
+
 } // namespace
 
 /*!
@@ -75,6 +132,7 @@ struct LayoutInferenceResult {
   Map<Buffer, Layout> layout_map;
   Map<For, Fragment> for_map;
   Map<For, PrimExpr> predicate_map;
+  Map<String, ObjectRef> layout_dag;
 };
 
 class BufferUseDefCollector : public IRVisitorWithAnalyzer {
@@ -176,8 +234,10 @@ public:
                 << " (data-shared with " << src_buffer
                 << ")\n current: " << target_layout->DebugOutput()
                 << "\n previous: " << layout_map[sib]->DebugOutput();
+            RecordInferEvent(sib, cur_infer_id, level, EventType::kSame);
           } else {
-            layout_map.Set(sib, target_layout);
+            UpdateLayoutMap(layout_map, sib, target_layout, cur_infer_id, level,
+                            EventType::kAccept);
             if (update_queue && use_list_.count(sib)) {
               for (int idx : use_list_[sib]) {
                 EnqueueWithPriority(idx, q, in_queue, cur_infer_id, layout_map);
@@ -220,7 +280,8 @@ public:
           }
           if (ProveFragmentContains(src_layout, dst_layout, indices, indices,
                                     inner_analyzer)) {
-            layout_map.Set(buffer, layout);
+            UpdateLayoutMap(layout_map, buffer, layout, cur_infer_id, level,
+                            EventType::kContain);
             // Propagate to alias buffers as well
             propagate_alias(buffer, layout);
             continue;
@@ -235,22 +296,28 @@ public:
             if (auto merged = MergeSwizzleLayouts(existing, layout, buffer)) {
               LOG(WARNING) << "Swizzle layout conflict for buffer " << buffer
                            << ", merging to smaller granularity";
-              layout_map.Set(buffer, merged.value());
+              UpdateLayoutMap(layout_map, buffer, merged.value(), cur_infer_id,
+                              level, EventType::kMerge);
               propagate_alias(buffer, merged.value());
               continue;
             }
           }
           // If not swizzle layouts or merge failed, raise error
-          LOG(FATAL) << "Get different layout for " << buffer
-                     << "\n current layout: " << layout->DebugOutput()
-                     << "\n previous layout: "
-                     << layout_map[buffer]->DebugOutput();
+          std::ostringstream os;
+          os << "Get different layout for " << buffer
+             << "\n current layout: " << layout->DebugOutput()
+             << "\n previous layout: " << layout_map[buffer]->DebugOutput();
+          std::string msg = os.str();
+          RecordInferEvent(buffer, cur_infer_id, level, EventType::kReject,
+                           msg);
+          throw LayoutConflictException(msg);
         }
         // Ensure aliases are consistent too
         propagate_alias(buffer, layout);
       } else {
         // Otherwise, update map
-        layout_map.Set(buffer, layout);
+        UpdateLayoutMap(layout_map, buffer, layout, cur_infer_id, level,
+                        EventType::kAccept);
         // Propagate to alias buffers (may enqueue their users)
         propagate_alias(buffer, layout);
         if (!update_queue)
@@ -298,6 +365,8 @@ public:
   };
 
   LayoutInferenceResult Run() {
+    dag_events_.clear();
+
     // Basic consistency check: infer_list_ and thread_var_vec_ should have the
     // same size
     ICHECK_EQ(infer_list_.size(), thread_var_vec_.size())
@@ -446,7 +515,16 @@ public:
       }
     }
 
-    return {layout_map, for_map, predicate_map};
+    Array<String> op_label_arr;
+    for (const auto &stmt : infer_list_stmt_) {
+      op_label_arr.push_back(GetOpLabel(stmt));
+    }
+
+    Map<String, ObjectRef> layout_dag;
+    layout_dag.Set("op_labels", op_label_arr);
+    layout_dag.Set("events", dag_events_);
+
+    return {layout_map, for_map, predicate_map, layout_dag};
   }
 
   void Collect(const PrimFunc &f) {
@@ -994,7 +1072,36 @@ private:
   std::vector<bool> buffer_oob_vec_;
   Target target_;
   LayoutMap annotated_layout_map_;
+  Array<Map<String, String>> dag_events_;
   bool skip_thread_partition_{false};
+
+  void UpdateLayoutMap(LayoutMap &layout_map, const Buffer &buffer,
+                       const Layout &new_layout, int src_op, InferLevel level,
+                       EventType event_type,
+                       const String &message = String("")) {
+    // update
+    layout_map.Set(buffer, new_layout);
+
+    Map<String, String> event;
+    event.Set("buffer", String(buffer->name));
+    event.Set("src", String(std::to_string(src_op)));
+    event.Set("level", InferLevelToName(level));
+    event.Set("event_type", EventTypeToName(event_type));
+    event.Set("message", message);
+    dag_events_.push_back(event);
+  }
+
+  void RecordInferEvent(const Buffer &buffer, int src_op, InferLevel level,
+                        EventType event_type,
+                        const String &message = String("")) {
+    Map<String, String> event;
+    event.Set("buffer", String(buffer->name));
+    event.Set("src", String(std::to_string(src_op)));
+    event.Set("level", InferLevelToName(level));
+    event.Set("event_type", EventTypeToName(event_type));
+    event.Set("message", message);
+    dag_events_.push_back(event);
+  }
 
   std::vector<TileOperator> BackupInferList() {
     std::vector<TileOperator> back_infer_list;
@@ -1208,6 +1315,7 @@ private:
     }
     auto block_ptr = block.CopyOnWrite();
     block_ptr->annotations.Set(attr::kLayoutMap, result_.layout_map);
+    block_ptr->annotations.Set(attr::kLayoutDag, result_.layout_dag);
     return block;
   }
 

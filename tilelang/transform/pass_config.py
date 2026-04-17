@@ -183,6 +183,19 @@ class PassConfigKey(str, Enum):
 
     """
 
+    TL_LAYOUT_DAG_VISUALIZATION_ENABLE = "tl.layout_dag_visualization_enable"
+    """Enable layout inference DAG visualization. Default: False"""
+
+    TL_LAYOUT_DAG_VISUALIZATION_FORMATS = "tl.layout_dag_visualization_formats"
+    """Layout DAG visualization formats.
+    Acceptable values: "dot", "svg", "all"
+    """
+
+    TL_LAYOUT_DAG_VISUALIZATION_OUTPUT_DIR = "tl.layout_dag_visualization_output_dir"
+    """Output directory for layout DAG visualization artifacts.
+    Default: "./tmp/layout_dag"
+    """
+
     TL_STORAGE_REWRITE_DETECT_INPLACE = "tl.storage_rewrite_detect_inplace"
     """Control StorageRewrite inplace detection.
 

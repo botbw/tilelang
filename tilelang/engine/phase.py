@@ -73,6 +73,13 @@ def should_enable_layout_visual(pass_ctx: PassContext | None = None) -> bool:
     return enabled
 
 
+def should_enable_layout_dag_visual(pass_ctx: PassContext | None = None) -> bool:
+    if pass_ctx is None:
+        pass_ctx = tilelang.transform.get_pass_context()
+    enabled = pass_ctx.config.get(tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_ENABLE, False)
+    return enabled
+
+
 def should_enable_race_check(pass_ctx: PassContext | None = None) -> bool:
     if pass_ctx is None:
         pass_ctx = tilelang.transform.get_pass_context()
@@ -108,11 +115,54 @@ def get_layout_visual_formats(pass_ctx: PassContext | None = None) -> list[str]:
     return formats_list
 
 
+def get_layout_dag_visual_formats(pass_ctx: PassContext | None = None) -> list[str]:
+    if pass_ctx is None:
+        pass_ctx = tilelang.transform.get_pass_context()
+    formats_value = pass_ctx.config.get(tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_FORMATS, "dot")
+    if not formats_value:
+        return ["dot"]
+
+    formats_str = formats_value.strip().lower()
+    valid_formats = ["dot", "svg", "all"]
+
+    if formats_str == "all":
+        return ["dot", "svg"]
+
+    if "," in formats_str:
+        formats_list = [f.strip() for f in formats_str.split(",")]
+    else:
+        formats_list = [formats_str]
+
+    invalid_formats = [f for f in formats_list if f not in valid_formats]
+    if invalid_formats:
+        raise ValueError(
+            f"Invalid formats for TL_LAYOUT_DAG_VISUALIZATION_FORMATS: {invalid_formats}. "
+            f"Valid formats are: {valid_formats}. "
+            "You can choose one valid format or comma-separated list (e.g., 'dot,svg')"
+        )
+    return formats_list
+
+
+def get_layout_dag_visual_output_dir(pass_ctx: PassContext | None = None) -> str:
+    if pass_ctx is None:
+        pass_ctx = tilelang.transform.get_pass_context()
+    out_dir = pass_ctx.config.get(tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_OUTPUT_DIR, "./tmp/layout_dag")
+    return str(out_dir)
+
+
 def LayoutVisual(mod: IRModule) -> None:
     """Apply layout visualization pass if enabled."""
     if should_enable_layout_visual():
         formats = get_layout_visual_formats()
         tilelang.analysis.LayoutVisual(formats=formats)(mod)
+
+
+def LayoutDagVisual(mod: IRModule) -> None:
+    """Apply layout DAG visualization pass if enabled."""
+    if should_enable_layout_dag_visual():
+        formats = get_layout_dag_visual_formats()
+        out_dir = get_layout_dag_visual_output_dir()
+        tilelang.analysis.LayoutDagVisual(out_dir=out_dir, formats=formats)(mod)
 
 
 def PreLowerSemanticCheck(mod: IRModule) -> None:
@@ -192,9 +242,12 @@ def LowerAndLegalize(mod: IRModule, target: Target) -> IRModule:
     # print(mod)
     mod = tilelang.transform.Simplify()(mod)
     # Infer memory layouts for fragments and shared memory
+    print(f"before layout inference:\n{mod=}")
     mod = tilelang.transform.LayoutInference()(mod)
     # Visualize the layout
     LayoutVisual(mod)
+    # Visualize the layout inference DAG
+    LayoutDagVisual(mod)
     # Lower high-level tile operations to low-level operations
     mod = tilelang.transform.LowerTileOp()(mod)
     # Lower l2 persistent map

@@ -8,6 +8,9 @@ import tilelang.language as T
     pass_configs={
         tilelang.PassConfigKey.TL_LAYOUT_VISUALIZATION_ENABLE: True,
         tilelang.PassConfigKey.TL_LAYOUT_VISUALIZATION_FORMATS: "svg",
+        tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_ENABLE: True,
+        tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_FORMATS: "dot,svg",
+        tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_OUTPUT_DIR: "./tmp/layout_dag",
     },
 )
 def matmul(M, N, K, block_M, block_N, block_K, dtype=T.float16, accum_dtype=T.float32):

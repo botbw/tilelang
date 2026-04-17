@@ -312,6 +312,7 @@ constexpr const char *kParallelLoopLayout = "parallel_loop_layout";
 constexpr const char *kParallelLoopPredicate = "parallel_loop_predicate";
 // ForAttr, Width (in elements) for coalesced memory access
 constexpr const char *kCoalescedWidth = "coalesced_width";
+constexpr const char *kLayoutDag = "layout_dag";
 } // namespace attr
 
 } // namespace tl

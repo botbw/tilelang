@@ -10,6 +10,9 @@ import argparse
     out_idx=[3, 4],
     pass_configs={
         tilelang.PassConfigKey.TL_ENABLE_FAST_MATH: True,
+        tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_ENABLE: True,
+        tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_FORMATS: "dot,svg",
+        tilelang.PassConfigKey.TL_LAYOUT_DAG_VISUALIZATION_OUTPUT_DIR: "./tmp/layout_dag",
     },
 )
 def flashattn_fwd(batch, heads, seq_len, dim, is_causal, block_M, block_N):
