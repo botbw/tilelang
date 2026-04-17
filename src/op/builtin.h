@@ -141,6 +141,12 @@ static constexpr const char *kLayoutVisualizationEnable =
     "tl.layout_visualization_enable";
 static constexpr const char *kLayoutVisualizationFormats =
     "tl.layout_visualization_formats";
+static constexpr const char *kLayoutDagVisualizationEnable =
+    "tl.layout_dag_visualization_enable";
+static constexpr const char *kLayoutDagVisualizationFormats =
+    "tl.layout_dag_visualization_formats";
+static constexpr const char *kLayoutDagVisualizationOutputDir =
+    "tl.layout_dag_visualization_output_dir";
 static constexpr const char *kDeviceCompileFlags = "tl.device_compile_flags";
 static constexpr const char *kDisableDataRaceCheck =
     "tl.disable_data_race_check";
