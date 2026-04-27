@@ -19,7 +19,7 @@ def gemm_sp_infer_layout(gemm_sp: GemmSPMMA, target: Target, thread_bounds: Rang
 
 
 @tvm_ffi.register_global_func("tl.gemm_sp.lower")
-def gemm_sp_lower(gemm_sp: GemmSPMMA, target: Target, thread_bounds: Range, thread_var: tir.Var):
+def gemm_sp_lower(gemm_sp: GemmSPMMA, target: Target, layout_map: dict, thread_bounds: Range, thread_var: tir.Var):
     thread_nums = thread_bounds.extent
     stmt = gemm_sp.lower(target, thread_nums, thread_var)
     return stmt

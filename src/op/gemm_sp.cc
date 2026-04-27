@@ -171,7 +171,7 @@ bool GemmSPNode::CheckWGMMA() const {
 Stmt GemmSPNode::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
   if (const auto f = ffi::Function::GetGlobal("tl.gemm_sp.lower")) {
     auto prim_func =
-        Downcast<PrimFunc>((*f)(tvm::ffi::GetRef<GemmSP>(this), T.target,
+        Downcast<PrimFunc>((*f)(tvm::ffi::GetRef<GemmSP>(this), T.target, T.layout_map,
                                 T.thread_bounds, T.thread_var));
     ICHECK(prim_func->attrs.defined());
     auto global_symbol = prim_func->attrs.GetAttr<String>("global_symbol");
