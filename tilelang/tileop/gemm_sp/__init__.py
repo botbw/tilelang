@@ -32,10 +32,10 @@ class GemmSP(Node, Scriptable):
     B: tir.Buffer
     C: tir.Buffer
 
-    aRegion: tir.PrimExpr
-    eRegion: tir.PrimExpr
-    bRegion: tir.PrimExpr
-    cRegion: tir.PrimExpr
+    aRegion: tir.BufferRegion
+    eRegion: tir.BufferRegion
+    bRegion: tir.BufferRegion
+    cRegion: tir.BufferRegion
 
     M: int
     N: int
