@@ -21,51 +21,6 @@ namespace tl {
 
 using namespace tir;
 
-std::pair<int, int>
-GemmSPWarpPolicyNode::computeWarpPartition(int M, int N, int block_size,
-                                           Target target, GemmInst gemm_inst,
-                                           int bits) const {
-  int num_warps = block_size / TargetGetWarpSize(target);
-
-  ICHECK(gemm_inst == GemmInst::kMMA || gemm_inst == GemmInst::kWGMMA)
-      << "GemmSP currently only supports MMA and WGMMA";
-  auto [m_warp, n_warp] = GemmWarpPolicyNode::computeWarpPartition(
-      M, N, block_size, target, gemm_inst);
-
-  // Special handling for gemm_sp when the tiling size is not a multiple
-  // This should be consistent with shape check in gemm_sp_sm80.h
-  int m_atom_size = bits == 16 ? 32 : 16;
-  int n_atom_size = bits == 16 ? 32 : 16;
-  static const char *err_msg =
-      "Cannot arrange the warp shape to be a multiple of atom size, please "
-      "reduce num threads or increase tiling size";
-  if (TargetIsAmpere(target)) {
-    int warp_shape_m = M / m_warp;
-    int warp_shape_n = N / n_warp;
-    if (warp_shape_m % m_atom_size) { // GemmWarpPolicy::kFullRow
-      m_warp = M / m_atom_size;
-      ICHECK(m_warp > 0) << err_msg;
-      n_warp = num_warps / m_warp;
-      warp_shape_n = N / n_warp;
-      ICHECK(warp_shape_n % n_atom_size == 0) << err_msg;
-    } else if (warp_shape_n % n_atom_size != 0) { // GemmWarpPolicy::kFullColumn
-      n_warp = N / n_atom_size;
-      ICHECK(n_warp > 0) << err_msg;
-      m_warp = num_warps / n_warp;
-      warp_shape_m = M / m_warp;
-      ICHECK(warp_shape_m % m_atom_size == 0) << err_msg;
-    }
-    ICHECK(m_warp * n_warp == num_warps)
-        << "m_warp * n_warp must equal num_warps, please report an issue when "
-           "encounter this"
-        << ", m_warp: " << m_warp << ", n_warp: " << n_warp << ", num_warps"
-        << num_warps;
-    this->m_warp = m_warp;
-    this->n_warp = n_warp;
-  }
-  return {m_warp, n_warp};
-}
-
 /**
  * @brief Construct a GemmSP operator from serialized TL arguments.
  *
@@ -136,17 +91,12 @@ AccessRegions GemmSPNode::GetAccessRegions() const {
   return result;
 }
 
-/**
- * @brief Create a deep copy of this GemmSPNode wrapped as a TileOperator.
- *
- * @return TileOperator A TileOperator holding a cloned GemmSPNode.
- */
 TileOperator GemmSPNode::Clone() const {
   auto op = tvm::ffi::make_object<GemmSPNode>(*this);
   return GemmSP(op);
 }
 
-GemmInst GemmSPNode::GetGemmInst(int block_size, Target target) const {
+GemmInst GemmSPNode::GetGemmSPInst(int block_size, Target target) const {
   int warp_size = TargetGetWarpSize(target);
   int num_warps = block_size / warp_size;
   bool allow_wgmma = TargetIsHopper(target) && (this->M >= 64) &&
@@ -165,14 +115,38 @@ GemmInst GemmSPNode::GetGemmInst(int block_size, Target target) const {
 }
 
 bool GemmSPNode::CheckWGMMA() const {
-  return false; // not supported yet
+  if (B.scope() != "shared.dyn" && B.scope() != "shared") {
+    return false;
+  }
+
+  if (C->dtype == DataType::Float(16) || C->dtype == DataType::Float(32)) {
+    if (A->dtype == DataType::Float(16) && B->dtype == DataType::Float(16))
+      return K % 32 == 0;
+    else if (A->dtype == DataType::BFloat(16) &&
+             B->dtype == DataType::BFloat(16))
+      return K % 32 == 0;
+    else if (A->dtype == DataType::Float(32) && B->dtype == DataType::Float(32))
+      return (!trans_A) && trans_B && K % 16 == 0;
+    else if (A->dtype.is_float8() && B->dtype.is_float8())
+      return (!trans_A) && trans_B && K % 64 == 0;
+    else
+      return false;
+  } else if (C->dtype == DataType::Int(32)) {
+    if ((A->dtype == DataType::Int(8) || A->dtype == DataType::UInt(8)) &&
+        (B->dtype == DataType::Int(8) || B->dtype == DataType::UInt(8)))
+      return (!trans_A) && trans_B && K % 64 == 0;
+    else
+      return false;
+  } else {
+    return false;
+  }
 }
 
 Stmt GemmSPNode::Lower(const LowerArgs &T, arith::Analyzer *analyzer) const {
   if (const auto f = ffi::Function::GetGlobal("tl.gemm_sp.lower")) {
     auto prim_func =
-        Downcast<PrimFunc>((*f)(tvm::ffi::GetRef<GemmSP>(this), T.target, T.layout_map,
-                                T.thread_bounds, T.thread_var));
+        Downcast<PrimFunc>((*f)(tvm::ffi::GetRef<GemmSP>(this), T.target,
+                                T.layout_map, T.thread_bounds, T.thread_var));
     ICHECK(prim_func->attrs.defined());
     auto global_symbol = prim_func->attrs.GetAttr<String>("global_symbol");
     ICHECK(global_symbol.has_value());
@@ -241,6 +215,10 @@ TVM_FFI_STATIC_INIT_BLOCK() {
         policy->computeWarpPartition(M, N, block_size, target, gemm_inst, bits);
         return;
       });
+  refl::GlobalDef().def("tl.GemmSPGetGemmSPInst",
+                        [](GemmSP gemm_sp, int block_size, Target target) {
+                          return gemm_sp->GetGemmSPInst(block_size, target);
+                        });
 }
 } // namespace tl
 } // namespace tvm
